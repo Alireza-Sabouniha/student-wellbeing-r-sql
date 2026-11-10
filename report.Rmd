@@ -1,0 +1,199 @@
+---
+pagetitle: "Student Well-Being in Japan"
+lang: en
+output:
+  html_document:
+    self_contained: true
+    theme: null
+    highlight: null
+    mathjax: null
+    css: report/style.css
+---
+
+```{r setup, include=FALSE}
+source("R/analysis.R")
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.width = 8.2, fig.height = 3.4, dpi = 150,
+                      out.width = "100%", fig.align = "center")
+```
+
+::::: {.report-shell}
+
+:::: {.hero}
+::: {.eyebrow}
+RESEARCH REPLICATION · R + SQL
+:::
+
+# Student well‑being in Japan
+
+Can a short R workflow reproduce what a 2019 study found about depressive symptoms among university students?
+
+::: {.byline}
+Alireza Sabouniha · Ritsumeikan Asia Pacific University survey, 2018
+:::
+::::
+
+:::: {.metrics}
+::: {.metric}
+**`r nrow(sample)`**
+
+Survey respondents · full published sample
+:::
+
+::: {.metric}
+**`r sprintf("%.2f%%", group_summary$rate[1])`**
+
+International students classified positive
+:::
+
+::: {.metric}
+**`r sprintf("%.2f%%", group_summary$rate[2])`**
+
+Domestic students classified positive
+:::
+::::
+
+::: {.standfirst}
+The DataCamp file contains the full published sample. The headline comparisons reproduce, including the higher odds for third-year international students. The extension shows that the evidence for a positive association with acculturative stress depends on how uncertainty is calculated. Accounting for length of stay makes little difference to the estimates.
+:::
+
+::: {.jump}
+[The original study](#original-study) · [01 · The sample](#sample) · [02 · Replication](#replication) · [03 · What the project adds](#extension)
+:::
+
+## The original study {#original-study}
+
+Nguyen, Le, and Meirmanov (2019) asked how common depressive symptoms were among domestic and international students at Ritsumeikan Asia Pacific University in Japan. They also asked whether students who felt more connected to others, or who reported more stress adapting to a different culture, tended to report different levels of symptoms. Their online survey received **268 responses**, including **201 international** and **67 domestic** students. [Read the original paper](https://doi.org/10.3390/su11030878).
+
+The researchers used the nine-item **PHQ-9** symptom questionnaire in two ways.
+
+- **Who met the study's symptom criteria?** The authors reported the share classified positive in each group. They used logistic regression for this yes-or-no outcome to examine how it varied with characteristics such as age, language proficiency, and length of stay.
+- **How severe were the symptoms?** The total PHQ-9 score runs from 0 to 27, with higher values indicating greater symptom severity. The authors used Pearson correlations to examine relationships between pairs of scores. They then entered social connectedness and acculturative stress together in a linear regression to estimate each association while accounting for the other.
+
+I verified the DataCamp file against the published survey data and reproduced selected results in R. I then checked whether the findings for international students depend on how uncertainty is calculated or on accounting for length of stay.
+
+## 01 · The sample {#sample}
+
+### A higher positive share can coexist with a lower average score
+
+The average PHQ-9 score was **`r sprintf("%.2f", group_summary$phq_mean[1])`** among international students and **`r sprintf("%.2f", group_summary$phq_mean[2])`** among domestic students. At the same time, a higher share of international students met the study's positive classification criteria. The two summaries can differ because the mean uses each student's total score, while the classification depends on the pattern and frequency of symptoms.
+
+::: {.figure-panel}
+```{r distribution, fig.cap="Figure 1 · PHQ-9 scores by student group", fig.alt="Cumulative distributions of PHQ-9 scores by student group."}
+distribution_plot
+```
+
+**How to read it.** Pick a score on the horizontal axis and follow it up to each line. At a score of 9, about `r sprintf("%.0f%%", 100 * mean(international$todep <= 9))` of international students and `r sprintf("%.0f%%", 100 * mean(domestic$todep <= 9))` of domestic students scored 9 or below. Nine is simply an example for reading the graph.
+:::
+
+### The third-year share was higher than the first-year share
+
+::: {.figure-panel}
+```{r stay, fig.cap="Figure 2 · Positive classification by duration", fig.alt="Positive classification by duration among international students. The first-year share is 30.5 percent and the third-year share is 47.8 percent."}
+stay_plot
+```
+
+**What stands out.** Among international respondents, `r sprintf("%.1f%%", 100 * stay_summary$rate[1])` of first-year students met the symptom criteria, compared with `r sprintf("%.1f%%", 100 * stay_summary$rate[3])` of third-year students. The share in the four-plus group was similar to year three, with only 21 respondents. Each bar describes a different group of students surveyed at the same time.
+:::
+
+## 02 · What reproduced {#replication}
+
+### Duration and positive classification
+
+The logistic model keeps years two and three separate and compares each duration with year one. The reproduced coefficients match Table 3 to two decimal places. Year three is the only individual duration comparison below 0.05 in either set of p-values. The reconstructed model's joint HC0 Wald test of all three duration coefficients gives **p = `r sprintf("%.3f", logit_stay_joint_p)`**. The evidence for a duration association overall is weaker than for the year-three contrast.
+
+In practical terms, the model estimates roughly **`r sprintf("%.1f", exp(logit_check$reproduced[2]))` times the odds** of meeting the symptom criteria for third-year versus first-year international students with the same included characteristics. Odds compare the probability of meeting the criteria with the probability of falling outside them. To express that contrast as a difference in percentage points, we would need a starting probability. The joint test considers all three duration comparisons together.
+
+::: {.result-table}
+```{r logit-table}
+logit_display <- logit_check |>
+  transmute(comparison,
+            paper_beta = sprintf("%+.2f", published),
+            r_beta = sprintf("%+.2f", reproduced),
+            paper_p = sprintf("%.3f", published_p),
+            r_p = sprintf("%.3f", p_value))
+knitr::kable(logit_display, format = "html", align = "lrrrr",
+             col.names = c("Stay vs 1 year", "Paper log-odds", "R log-odds", "Paper p", "R p"),
+             caption = "Table 3 · International students")
+```
+:::
+
+### Social connectedness and acculturative stress
+
+The Pearson correlations in Tables 4 and 5 reproduce to two decimal places for all three variable pairs in each group. In Table 6, connectedness has a negative coefficient and stress a positive coefficient in both groups. The published and reproduced estimates differ by less than 0.001.
+
+::: {.result-table}
+```{r severity-table}
+severity_display <- paper_ols |>
+  transmute(group, term, published = sprintf("%+.3f", published),
+            reproduced = sprintf("%+.4f", reproduced))
+knitr::kable(severity_display, format = "html", align = "llrr",
+             col.names = c("Group", "Predictor", "Paper", "R"),
+             caption = "Table 6 · Coefficients per one point on each scale")
+```
+:::
+
+The international model uses raw PHQ-9 points. The domestic model uses the square root of PHQ-9, following the paper. The comparison uses Table 6, whose international connectedness coefficient differs from the number in the surrounding text. The signs are comparable across the two groups, while the size of each coefficient is expressed on its own outcome scale.
+
+Among international students, the reproduced model associates a 10-point higher connectedness score with **2.41 fewer PHQ-9 points**, comparing students with the same reported level of stress. A 10-point higher stress score corresponds to **0.33 more PHQ-9 points**, comparing students with the same reported level of connectedness. Each 10-point change refers to its own questionnaire scale.
+
+## 03 · What the project adds {#extension}
+
+I used the reproduced model to ask two questions. Does the evidence for a positive association hold up when I use a different method to calculate uncertainty? Do the estimates change when I account for how long students have lived in Japan?
+
+### Same estimate, more uncertainty
+
+I kept the original linear model and the same `r nobs(paper_int)` international students, then recalculated the intervals using HC3 robust standard errors. This method allows for differences in how much individual scores vary around the fitted model.
+
+::: {.result-table}
+```{r stress-intervals}
+stress_intervals <- bind_rows(
+  tibble(
+    model = "Original model",
+    method = "Conventional",
+    estimate = 10 * coef(paper_int)[["toas"]],
+    lower = 10 * confint(paper_int)["toas", 1],
+    upper = 10 * confint(paper_int)["toas", 2]
+  ),
+  extension_plot_data |>
+    filter(term == "Acculturative stress") |>
+    mutate(model = recode(model, "Paper model reproduced" = "Original model"),
+           method = "Robust (HC3)")
+) |>
+  transmute(model, method, estimate = sprintf("%+.2f", estimate),
+            interval = sprintf("[%+.2f, %+.2f]", lower, upper))
+
+knitr::kable(stress_intervals, format = "html", align = "llrr",
+             col.names = c("Model", "Standard errors", "Estimate", "95% interval"),
+             caption = "Acculturative stress · PHQ-9 points per 10-point increase in stress")
+```
+:::
+
+Both methods give the same best estimate for the original model. Students reporting 10 points more stress were estimated to score **0.33 points higher on PHQ-9**, holding social connectedness fixed. The conventional interval sits above zero. The robust interval is wider and includes zero, so the survey leaves open the possibility of no association. **The estimated relationship stays positive, but the evidence for it is less clear.** In statistical terms, the positive coefficient is statistically significant at the 5% level with conventional standard errors and inconclusive at that level with HC3.
+
+### Accounting for length of stay changes little
+
+I then added four length-of-stay groups, keeping the same students and using robust intervals for both models. Figure 3 isolates that comparison.
+
+::: {.figure-panel}
+```{r extension, fig.cap="Figure 3 · Estimates before and after accounting for length of stay", fig.height=2.7, fig.alt="Both estimates change little after accounting for length of stay. The robust intervals for stress include zero and the intervals for social connectedness stay below zero."}
+extension_plot
+```
+
+**How to read it.** A dot is the estimated difference in PHQ-9 per 10 points on the relevant survey scale. Its line shows a 95% confidence interval based on HC3 robust standard errors. Zero represents no difference. The two connectedness intervals sit to the left of zero. Both stress intervals reach across zero, so the sample leaves more uncertainty about the direction of that relationship.
+:::
+
+::: {.standfirst}
+The stress estimate moves from **+0.33 to +0.31**. The social connectedness estimate moves from **−2.41 to −2.44 PHQ-9 points**, with both robust intervals below zero. The estimates are stable when duration enters the model, while the evidence for a positive stress association is sensitive to how the interval is calculated.
+:::
+
+## Data and methods
+
+- **Source match.** All 286 rows and 50 columns of the DataCamp CSV match the [published supplement](https://www.mdpi.com/2306-5729/4/3/124/s1) after lowercasing the headers. The 18 rows without a group label are excluded from the analysis. `R/check_source.R` reruns the match.
+- **Logistic sample.** The reconstruction uses `r nobs(paper_logit)` international respondents. Eight lack a partner response. One respondent at the highest Japanese proficiency level is omitted because that singleton category perfectly predicts the outcome. The logit tests use HC0 robust standard errors. The linear-model robustness checks use HC3. The analysis calculates these with `sandwich::vcovHC()` and uses `lmtest` for tests and confidence intervals.
+- **SQL check.** SQLite and `dplyr` produce the same original DataCamp summary for all `r nrow(r_summary)` exact duration groups.
+- **Interpretation.** The survey is cross-sectional. The estimates describe associations among respondents at one university. The survey collected the measures at the same time, so the direction of influence between connectedness, stress, and symptoms remains uncertain.
+
+[Research article · Nguyen, Le, and Meirmanov (2019)](https://doi.org/10.3390/su11030878) · [Data descriptor](https://doi.org/10.3390/data4030124)
+
+:::::
